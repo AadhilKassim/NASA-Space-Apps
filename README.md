@@ -1,5 +1,51 @@
-# NASA Space Apps Challenge
+# A.I.M. - Asteroid Impact Mitigation Visualizer
 
-## About the Challenge
+## NASA Space Apps Challenge Solution
 
-NASA newly identified near-Earth asteroid, "Impactor-2025," poses a potential threat to Earth, but do we have the tools to enable the public and decision makers to understand and mitigate its risks? NASA datasets include information about known asteroids and the United States Geological Survey provides critical information that could enable modeling the effects of asteroid impacts, but this data needs to be integrated to enable effective visualization and decision making. Your challenge is to develop an interactive visualization and simulation tool that uses real data to help users model asteroid impact scenarios, predict consequences, and evaluate potential mitigation strategies. (Planetary Science Division)
+Interactive visualization and simulation tool for asteroid threat assessment and mitigation planning.
+
+## Features
+
+- **3D Orbital Visualizer**: Interactive solar system with real asteroid trajectories
+- **Impact Simulation**: Earth impact modeling with blast radius visualization
+- **Mitigation Planning**: Strategy evaluation and mission planning interface
+
+## Quick Start
+
+1. Install dependencies:
+
+```bash
+npm install
+cd client && npm install
+cd ../server && npm install
+```
+
+2. Start the application:
+
+```bash
+npm run dev
+```
+
+3. Open [Local Host 3000](http://localhost:3000)
+
+## Tech Stack
+
+- **Frontend**: React, Three.js, Leaflet
+- **Backend**: Node.js, Express
+- **APIs**: NASA NeoWs, NASA Sentry
+
+## Project Structure
+
+```text
+├── client/          # React frontend
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── SolarSystemView.js
+│   │   │   ├── ImpactSimulation.js
+│   │   │   ├── MitigationPlanner.js
+│   │   │   └── Sidebar.js
+│   │   └── App.js
+├── server/          # Express backend
+│   └── index.js
+└── README.md
+```

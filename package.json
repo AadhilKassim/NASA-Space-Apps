@@ -1,0 +1,23 @@
+{
+  "name": "aim-asteroid-visualizer",
+  "version": "1.0.0",
+  "description": "Asteroid Impact Mitigation Visualizer for NASA Space Apps Challenge",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "npm run servernpm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build"
+  },
+  "keywords": [
+    "nasa",
+    "asteroid",
+    "visualization",
+    "space"
+  ],
+  "author": "NASA Space Apps Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
