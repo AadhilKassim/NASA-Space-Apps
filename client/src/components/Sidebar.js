@@ -5,20 +5,30 @@ function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedA
   const [asteroids, setAsteroids] = useState([]);
   const [loading, setLoading] = useState(true);
 
+
   useEffect(() => {
+    const fetchAsteroids = async () => {
+      try {
+        const NASA_API_KEY = process.env.REACT_APP_NASA_API_KEY || 'DEMO_KEY';
+        const today = new Date();
+        const start = today.toISOString().slice(0,10);
+        const end = start;
+        const url = `https://api.nasa.gov/neo/rest/v1/feed?start_date=${start}&end_date=${end}&api_key=${NASA_API_KEY}`;
+        const response = await axios.get(url);
+        const feed = response.data.near_earth_objects || {};
+        let arr = [];
+        for (const k of Object.keys(feed)) {
+          arr = arr.concat(feed[k]);
+        }
+        setAsteroids(arr);
+      } catch (error) {
+        console.error('Error fetching asteroids from NASA NeoWs:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchAsteroids();
   }, []);
-
-  const fetchAsteroids = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/asteroids');
-      setAsteroids(response.data.near_earth_objects || []);
-    } catch (error) {
-      console.error('Error fetching asteroids:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const modules = [
     { id: 'orbital', name: '3D Orbital View', icon: '🌌' },
