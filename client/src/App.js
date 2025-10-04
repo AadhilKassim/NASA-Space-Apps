@@ -42,6 +42,8 @@ function App() {
 
       <div className="flex">
         {/* Sidebar */}
+        const [selectedAsteroid, setSelectedAsteroid] = useState(null);
+
         <Sidebar
           activeModule={activeModule}
           setActiveModule={setActiveModule}
