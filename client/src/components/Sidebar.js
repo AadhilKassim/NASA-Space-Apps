@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-function Sidebar({ activeModule, setActiveModule, selectedAsteroid }) {
+function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedAsteroid }) {
   const [asteroids, setAsteroids] = useState([]);
   const [loading, setLoading] = useState(true);
 
