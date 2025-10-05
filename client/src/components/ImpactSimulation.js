@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
 import { MapContainer, TileLayer, Circle, Popup, Marker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix Leaflet marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: '/marker-icon.png',
+  iconUrl: '/marker-icon.png',
+});
 
 function ImpactSimulation({ asteroid }) {
   const [impactPoint, setImpactPoint] = useState([40.7128, -74.0060]); // NYC default
@@ -15,9 +24,16 @@ function ImpactSimulation({ asteroid }) {
   }
 
   const calculateBlastRadius = () => {
-    // Simplified calculation based on asteroid size
-    const diameter = 100; // Default size in meters
-    return Math.sqrt(diameter) * 1000; // Blast radius in meters
+    const diameter = asteroid.estimated_diameter?.meters?.estimated_diameter_max || 100;
+    return Math.sqrt(diameter) * 1000;
+  };
+
+  const calculateSeverity = () => {
+    const diameter = asteroid.estimated_diameter?.meters?.estimated_diameter_max || 100;
+    const energy = Math.pow(diameter/1000, 3) * 15; // Rough energy in MT
+    const casualties = diameter > 1000 ? '1M+' : diameter > 100 ? '100K-1M' : '10K-100K';
+    const economic = diameter > 1000 ? '$1T+' : diameter > 100 ? '$100B-1T' : '$10B-100B';
+    return { energy: energy.toFixed(1), casualties, economic };
   };
 
   const blastRadius = calculateBlastRadius();
@@ -34,11 +50,20 @@ function ImpactSimulation({ asteroid }) {
           {showEffects ? 'Hide Effects' : 'Simulate Impact'}
         </button>
         
+        <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+          <h4>Impact Severity Analysis</h4>
+          <p><strong>Diameter:</strong> {asteroid.estimated_diameter?.meters?.estimated_diameter_max?.toFixed(0) || 100}m</p>
+          <p><strong>Impact Probability:</strong> {asteroid.impact_probability || 'N/A'}</p>
+          <p><strong>Torino Scale:</strong> {asteroid.torino_scale || 0}</p>
+          <p><strong>Blast Radius:</strong> {(blastRadius/1000).toFixed(1)} km</p>
+          <p><strong>Energy:</strong> {calculateSeverity().energy} MT</p>
+          <p><strong>Casualties:</strong> {calculateSeverity().casualties}</p>
+          <p><strong>Economic Impact:</strong> {calculateSeverity().economic}</p>
+        </div>
+        
         {showEffects && (
-          <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
-            <p><strong>Blast Radius:</strong> {(blastRadius/1000).toFixed(1)} km</p>
-            <p><strong>Estimated Casualties:</strong> 50,000 - 500,000</p>
-            <p><strong>Economic Impact:</strong> $10-100 billion</p>
+          <div style={{ marginTop: '0.5rem' }}>
+            <p style={{ color: '#4caf50', fontSize: '0.9rem' }}>✓ Impact effects displayed on map</p>
           </div>
         )}
       </div>

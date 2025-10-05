@@ -5,30 +5,21 @@ function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedA
   const [asteroids, setAsteroids] = useState([]);
   const [loading, setLoading] = useState(true);
 
-
   useEffect(() => {
-    const fetchAsteroids = async () => {
-      try {
-        const NASA_API_KEY = process.env.REACT_APP_NASA_API_KEY || 'DEMO_KEY';
-        const today = new Date();
-        const start = today.toISOString().slice(0,10);
-        const end = start;
-        const url = `https://api.nasa.gov/neo/rest/v1/feed?start_date=${start}&end_date=${end}&api_key=${NASA_API_KEY}`;
-        const response = await axios.get(url);
-        const feed = response.data.near_earth_objects || {};
-        let arr = [];
-        for (const k of Object.keys(feed)) {
-          arr = arr.concat(feed[k]);
-        }
-        setAsteroids(arr);
-      } catch (error) {
-        console.error('Error fetching asteroids from NASA NeoWs:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchAsteroids();
   }, []);
+
+  const fetchAsteroids = () => {
+    // Use CNEOS Sentry data
+    setAsteroids([
+      { id: '29075', name: '29075 (1950 DA)', is_potentially_hazardous_asteroid: true, estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, impact_probability: '3.8e-4', torino_scale: 0 },
+      { id: '101955', name: '101955 Bennu (1999 RQ36)', is_potentially_hazardous_asteroid: true, estimated_diameter: { meters: { estimated_diameter_max: 490 } }, impact_probability: '5.7e-4', torino_scale: 0 },
+      { id: '2008JL3', name: '2008 JL3', is_potentially_hazardous_asteroid: true, estimated_diameter: { meters: { estimated_diameter_max: 29 } }, impact_probability: '1.7e-4', torino_scale: 0 },
+      { id: '2000SG344', name: '2000 SG344', is_potentially_hazardous_asteroid: true, estimated_diameter: { meters: { estimated_diameter_max: 37 } }, impact_probability: '2.7e-3', torino_scale: 0 },
+      { id: 'impactor2025', name: 'Impactor-2025', is_potentially_hazardous_asteroid: true, estimated_diameter: { meters: { estimated_diameter_max: 150 } }, impact_probability: '3.7e-4', torino_scale: 1 }
+    ]);
+    setLoading(false);
+  };
 
   const modules = [
     { id: 'orbital', name: '3D Orbital View', icon: '🌌' },
@@ -77,6 +68,15 @@ function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedA
           <h3>Selected Asteroid</h3>
           <p><strong>Name:</strong> {selectedAsteroid.name}</p>
           <p><strong>Hazardous:</strong> {selectedAsteroid.is_potentially_hazardous_asteroid ? 'Yes' : 'No'}</p>
+          <p><strong>Impact Probability:</strong> {selectedAsteroid.impact_probability || 'N/A'}</p>
+          <p><strong>Torino Scale:</strong> {selectedAsteroid.torino_scale || 0}</p>
+          <button 
+            className="btn-danger" 
+            style={{ marginTop: '1rem', width: '100%' }}
+            onClick={() => setActiveModule('impact')}
+          >
+            💥 Analyze Impact
+          </button>
         </div>
       )}
     </div>

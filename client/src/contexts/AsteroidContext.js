@@ -1,11 +1,18 @@
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
-export const AsteroidContext = createContext();
+const defaultContextValue = {
+  asteroids: [],
+  loading: true,
+  error: null
+};
+
+export const AsteroidContext = createContext(defaultContextValue);
 
 export function AsteroidProvider({ children }) {
   const [asteroids, setAsteroids] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const API_BASE = process.env.REACT_APP_API_BASE || '/api';
 
   useEffect(() => {
@@ -13,20 +20,26 @@ export function AsteroidProvider({ children }) {
     async function load() {
       try {
         const res = await axios.get(`${API_BASE}/asteroids`);
-        // NeoWs feed has nested structure feed -> date -> array. Flatten top 50
-        const feed = res.data.near_earth_objects || res.data;
+        // Always flatten near_earth_objects (object of arrays) into a single array
         let arr = [];
-        if (Array.isArray(feed)) arr = feed;
-        else {
-          for (const k of Object.keys(feed || {})) {
-            arr = arr.concat(feed[k]);
-          }
+        const feed = res.data.near_earth_objects;
+        if (feed && typeof feed === 'object') {
+          // feed is an object keyed by date, each value is an array
+          Object.values(feed).forEach(dayArr => {
+            if (Array.isArray(dayArr)) arr = arr.concat(dayArr);
+          });
+        } else if (Array.isArray(feed)) {
+          arr = feed;
         }
         if (mounted) {
           setAsteroids(arr.slice(0, 100));
         }
       } catch (e) {
         console.error(e);
+        if (mounted) {
+          setError(e.message);
+          setAsteroids([]);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -36,7 +49,7 @@ export function AsteroidProvider({ children }) {
   }, []);
 
   return (
-    <AsteroidContext.Provider value={{ asteroids, loading }}>
+    <AsteroidContext.Provider value={{ asteroids, loading, error }}>
       {children}
     </AsteroidContext.Provider>
   );
