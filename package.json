@@ -7,7 +7,8 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd server && npm run dev",
     "client": "cd client && npm run dev",
-    "build": "cd client && npm run build"
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start"
   },
   "keywords": [
     "nasa",
@@ -17,7 +18,7 @@
   ],
   "author": "NASA Space Apps Team",
   "license": "MIT",
-  "devDependencies": {
+  "dependencies": {
     "concurrently": "^9.2.1"
   }
 }
