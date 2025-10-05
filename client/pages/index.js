@@ -26,6 +26,7 @@ export default function Home() {
           activeModule={activeModule}
           setActiveModule={setActiveModule}
           selectedAsteroid={selectedAsteroid}
+          setSelectedAsteroid={setSelectedAsteroid}
           style={{ width: '300px', overflowY: 'auto' }}
         />
 

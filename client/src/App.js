@@ -6,10 +6,12 @@ import SolarSystemView from "./components/SolarSystemView";
 import ImpactSimulation from "./components/ImpactSimulation";
 import MitigationPlanner from "./components/MitigationPlanner";
 import Sidebar from "./components/Sidebar";
+import RiskAnalysis from "./components/RiskAnalysis";
 
 function App() {
   const [activeModule, setActiveModule] = useState("orbital");
   const [selectedAsteroid, setSelectedAsteroid] = useState(null);
+  const [showRiskAnalysis, setShowRiskAnalysis] = useState(false);
 
   return (
     <div className="relative min-h-screen bg-black text-white font-sans overflow-hidden">
@@ -42,7 +44,6 @@ function App() {
 
       <div className="flex">
         {/* Sidebar */}
-        const [selectedAsteroid, setSelectedAsteroid] = useState(null);
 
         <Sidebar
           activeModule={activeModule}
@@ -93,6 +94,13 @@ function App() {
           </AnimatePresence>
         </main>
       </div>
+      
+      {showRiskAnalysis && selectedAsteroid && (
+        <RiskAnalysis 
+          asteroid={selectedAsteroid}
+          onClose={() => setShowRiskAnalysis(false)}
+        />
+      )}
     </div>
   );
 }
