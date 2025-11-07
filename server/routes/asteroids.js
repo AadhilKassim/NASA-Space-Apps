@@ -106,30 +106,20 @@ const enrichedHandler = async (req, res) => {
     const { id } = req.params;
     const { sstr, spk, des } = req.query;
     try {
-        // Base NASA NeoWs lookup
-        const neoRaw = await fetchNeoWsLookup(id);
-        const neo = formatAsteroidData(neoRaw);
+        // Prefer SBDB if explicit query provided (spk/sstr/des)
+        let sbdb = null;
+        let neo = null;
 
-        // Determine SBDB query strategy
+        // SBDB first when client provided explicit identifier
         let sbdbQuery = null;
         if (sstr || spk || des) {
             sbdbQuery = { sstr, spk, des };
-        } else if (neo?.id) {
-            // Try SPK first if numeric
-            if (/^\d+$/.test(neo.id)) {
-                sbdbQuery = { spk: neo.id };
-            } else if (neo.name) {
-                // Strip parentheses for designation style names
-                const cleaned = neo.name.replace(/[()]/g, '').trim();
-                sbdbQuery = { sstr: cleaned };
-            }
         }
 
-        let sbdb = null;
+        // Attempt SBDB fetch if we have a query already
         if (sbdbQuery) {
             try {
                 const sbdbRaw = await fetchSbdb(sbdbQuery);
-                // If list instead of unique match, surface minimal info
                 if (sbdbRaw && sbdbRaw.list && Array.isArray(sbdbRaw.list)) {
                     sbdb = { match_list: sbdbRaw.list, message: sbdbRaw.message || 'multiple matches' };
                 } else {
@@ -140,9 +130,45 @@ const enrichedHandler = async (req, res) => {
             }
         }
 
+        // Try NeoWs lookup, but don't fail the request if it 404s
+        try {
+            const neoRaw = await fetchNeoWsLookup(id);
+            if (neoRaw) neo = formatAsteroidData(neoRaw);
+        } catch (e) {
+            // NeoWs lookup failed (likely 404 if id isn't a NeoWs internal id). Continue with SBDB-only.
+            neo = null;
+        }
+
+        // If we still don't have an SBDB query and we got a NeoWs payload, derive SBDB query
+        if (!sbdbQuery && neo) {
+            if (/^\d+$/.test(neo.id)) {
+                sbdbQuery = { spk: neo.id };
+            } else if (neo.name) {
+                const cleaned = neo.name.replace(/[()]/g, '').trim();
+                sbdbQuery = { sstr: cleaned };
+            }
+            if (sbdbQuery) {
+                try {
+                    const sbdbRaw = await fetchSbdb(sbdbQuery);
+                    if (sbdbRaw && sbdbRaw.list && Array.isArray(sbdbRaw.list)) {
+                        sbdb = { match_list: sbdbRaw.list, message: sbdbRaw.message || 'multiple matches' };
+                    } else {
+                        sbdb = normalizeSbdbPayload(sbdbRaw);
+                    }
+                } catch (e) {
+                    sbdb = { error: true, message: e.message };
+                }
+            }
+        }
+
+        // If neither source is available, return 404
+        if (!neo && (!sbdb || sbdb.error)) {
+            return res.status(404).json({ error: 'Asteroid not found in NeoWs or SBDB' });
+        }
+
         return res.json({
-            id: neo.id,
-            name: neo.name,
+            id: neo?.id || sbdb?.id || id,
+            name: neo?.name || sbdb?.name || 'Unknown',
             neo,
             sbdb,
             merged: mergeAsteroidSources(neo, sbdb)

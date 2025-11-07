@@ -4,6 +4,25 @@ const axios = require('axios');
 const NASA_API_KEY = process.env.NASA_API_KEY || 'DEMO_KEY';
 const NEOWS_BASE = 'https://api.nasa.gov/neo/rest/v1';
 
+function logNeoError(error, context = {}) {
+    const status = error.response?.status;
+    const statusText = error.response?.statusText;
+    const code = error.code;
+    const url = error.config?.url;
+    const method = error.config?.method;
+    const params = error.config?.params ? { ...error.config.params, api_key: undefined } : undefined;
+    console.warn('[NeoWs] request failed', {
+        context,
+        status,
+        statusText,
+        code,
+        method,
+        url,
+        params,
+        message: error.message
+    });
+}
+
 /**
  * Fetch asteroids based on their closest approach date to Earth
  * @param {string} start_date - Start date in YYYY-MM-DD format
@@ -28,6 +47,7 @@ async function fetchNeoWsFeed(start_date, end_date, retries = 3) {
             });
             return resp.data;
         } catch (error) {
+            logNeoError(error, { endpoint: 'feed', attempt, start_date, end_date });
             if (attempt === retries) throw error;
             const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
             console.warn(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
@@ -59,6 +79,7 @@ async function fetchNeoWsBrowse(page = 0, retries = 3) {
             });
             return resp.data;
         } catch (error) {
+            logNeoError(error, { endpoint: 'browse', attempt, page });
             if (attempt === retries) throw error;
             const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
             console.warn(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
@@ -88,6 +109,7 @@ async function fetchNeoWsLookup(asteroidId, retries = 3) {
             });
             return resp.data;
         } catch (error) {
+            logNeoError(error, { endpoint: 'lookup', attempt, asteroidId });
             if (attempt === retries) throw error;
             const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
             console.warn(`Attempt ${attempt} failed, retrying in ${delay}ms...`);

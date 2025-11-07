@@ -5,7 +5,8 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+let basePort = parseInt(process.env.PORT, 10) || 5000;
+let serverInstance;
 
 app.use(cors());
 app.use(express.json());
@@ -17,6 +18,11 @@ app.use(express.static(path.join(__dirname, '../client/out')));
 // Mount asteroid routes (NeoWs + SBDB)
 const asteroidRoutes = require('./routes/asteroids');
 app.use('/api/asteroids', asteroidRoutes);
+
+// Simple health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now(), port: basePort });
+});
 
 // Risk analysis endpoint using Python script
 app.get('/api/analyze/:designation', async (req, res) => {
@@ -62,10 +68,33 @@ app.get('*', (req, res) => {
     res.status(500).json({ error: err.message });
   });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+function startServer(attempt = 0) {
+  const portToUse = basePort + attempt;
+  console.log(`[startServer] Attempting to listen on port ${portToUse}...`);
+  serverInstance = app.listen(portToUse, () => {
+    console.log(`Server running on port ${portToUse}`);
+    if (attempt > 0) console.log(`(Used fallback port after EADDRINUSE)`);
     console.log(`Asteroid routes mounted at /api/asteroids`);
-});
+    console.log(`Health endpoint: http://localhost:${portToUse}/api/health`);
+  });
+  serverInstance.on('error', (err) => {
+    console.error(`[startServer] Error on port ${portToUse}:`, err.code, err.message);
+    if (err.code === 'EADDRINUSE' && attempt < 3) {
+      console.warn(`Port ${portToUse} in use, retrying on port ${portToUse + 1}`);
+      startServer(attempt + 1);
+    } else {
+      console.error('Failed to start server:', err);
+      process.exit(1);
+    }
+  });
+  serverInstance.on('close', () => {
+    console.log(`[startServer] Server on port ${portToUse} closed.`);
+  });
+}
+
+console.log('[index.js] Initializing server...');
+startServer();
+console.log('[index.js] startServer() called.');
 
   // Handle uncaught exceptions
   process.on('uncaughtException', (err) => {
