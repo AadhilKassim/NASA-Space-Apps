@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -11,9 +12,15 @@ let serverInstance;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from Next.js build
-app.use(express.static(path.join(__dirname, '../client/.next/static')));
-app.use(express.static(path.join(__dirname, '../client/out')));
+// Serve static files from Next.js build (exported to client/out)
+const outDir = path.join(__dirname, '../client/out');
+const nextStaticDir = path.join(__dirname, '../client/.next/static');
+if (fs.existsSync(nextStaticDir)) {
+  app.use(express.static(nextStaticDir));
+}
+if (fs.existsSync(outDir)) {
+  app.use(express.static(outDir));
+}
 
 // Mount asteroid routes (NeoWs + SBDB)
 const asteroidRoutes = require('./routes/asteroids');
@@ -54,12 +61,32 @@ app.get('/api/analyze/:designation', async (req, res) => {
   }
 });
 
-// Catch all handler for Next.js pages
-app.get('*', (req, res) => {
+// Catch-all handler for SPA routing when static export exists
+app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
-  res.sendFile(path.join(__dirname, '../client/out/index.html'));
+  const indexHtml = path.join(outDir, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
+  }
+  // Graceful fallback when static export not found (e.g., first deploy)
+  res.status(200).send(`<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>AIM Visualizer</title>
+      <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;max-width:800px;margin:4rem auto;padding:0 1rem;line-height:1.6}</style>
+    </head>
+    <body>
+      <h1>AIM Visualizer</h1>
+      <p>The static client build was not found at <code>/client/out</code>.</p>
+      <p>Please ensure the client is built with Next.js static export:</p>
+      <pre>cd client\nnpm run build</pre>
+      <p>Then redeploy or restart the server.</p>
+    </body>
+  </html>`);
 });
 
   // Global error handler

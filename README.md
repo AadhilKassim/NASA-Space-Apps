@@ -32,6 +32,34 @@ npm run dev
 
 3. Open [http://localhost:3000](http://localhost:3000)
 
+### Production / Deployment (Render / Node Host)
+
+The Express server serves a static export of the Next.js client from `client/out`. You must build the client before starting the server.
+
+Steps:
+
+```bash
+# From repo root
+npm install
+cd client && npm install && npm run build   # creates client/out via next export
+cd ../server && npm install
+npm start  # launches Express on PORT (default 5000)
+```
+
+Render.com example configuration:
+
+Build Command:
+```bash
+npm install && cd client && npm ci && npm run build && cd ../server && npm ci
+```
+
+Start Command:
+```bash
+cd server && npm start
+```
+
+If `client/out/index.html` is missing, the server returns a minimal fallback page explaining how to build the client. This prevents noisy ENOENT errors.
+
 ### Docker Deployment
 
 ```bash
