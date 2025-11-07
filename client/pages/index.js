@@ -12,6 +12,8 @@ export default function Home() {
   const [activeModule, setActiveModule] = useState('orbital');
   const [selectedAsteroid, setSelectedAsteroid] = useState(null);
   const [date, setDate] = useState(new Date());
+  const [timeScale, setTimeScale] = useState(86400); // Default: 1 day per second
+  const [isPlaying, setIsPlaying] = useState(false);
 
   return (
     <div className="app" style={{ backgroundColor: '#000000', color: 'white', height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -36,9 +38,17 @@ export default function Home() {
               <SolarSystemView
                 onAsteroidSelect={setSelectedAsteroid}
                 selectedAsteroid={selectedAsteroid}
-                date={date}
+                currentDate={date}
+                timeScale={timeScale}
               />
-              <TimelineSlider date={date} onChange={setDate} />
+              <TimelineSlider 
+                date={date} 
+                onChange={setDate}
+                timeScale={timeScale}
+                onTimeScaleChange={setTimeScale}
+                isPlaying={isPlaying}
+                onPlayPause={setIsPlaying}
+              />
             </>
           )}
           {activeModule === 'impact' && (
