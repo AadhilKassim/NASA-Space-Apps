@@ -185,6 +185,17 @@ module.exports = require("react/jsx-dev-runtime");
 "use strict";
 module.exports = require("react/jsx-runtime");
 
+/***/ }),
+
+/***/ "three":
+/*!************************!*\
+  !*** external "three" ***!
+  \************************/
+/***/ ((module) => {
+
+"use strict";
+module.exports = import("three");;
+
 /***/ })
 
 };

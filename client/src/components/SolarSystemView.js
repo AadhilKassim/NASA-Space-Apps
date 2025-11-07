@@ -1,6 +1,19 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Html, Stars } from '@react-three/drei';
+import * as THREE from 'three';
+
+// Global scale factor for all celestial bodies (sizes only)
+const GLOBAL_SCALE_FACTOR = 0.5;
+
+// Global distance scaling factor for planetary orbits
+// Adjust this value to increase/decrease spacing between planets
+// Higher values = more space between planets
+const ORBITAL_DISTANCE_SCALE = 2.0;
+
+// Global star field radius for the SolarSystemView skybox stars
+// Increase to push stars farther out to the edge of the simulated system
+export const STAR_FIELD_RADIUS = 900;
 
 // Realistic astronomical data (NASA/JPL values)
 // Semi-major axis in AU, converted to scene units (1 AU = 10 units for visualization)
@@ -12,11 +25,11 @@ const PLANETS = [
     id: 'mercury', 
     name: 'Mercury', 
     color: '#8c7853', 
-    a: 3.87, // 0.387 AU * 10
+    a: 0.387 * 10 * ORBITAL_DISTANCE_SCALE, // 0.387 AU
     e: 0.2056, 
     period: 87.969, 
     longitudePerihelion: 77.45645,
-    size: 0.38, 
+    size: 0.38 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 2439.7, // km
     rotationPeriod: 58.646 // Earth days
   },
@@ -24,11 +37,11 @@ const PLANETS = [
     id: 'venus', 
     name: 'Venus', 
     color: '#ffc649', 
-    a: 7.23, // 0.723 AU * 10
+    a: 0.723 * 10 * ORBITAL_DISTANCE_SCALE, // 0.723 AU
     e: 0.0068, 
     period: 224.701, 
     longitudePerihelion: 131.53298,
-    size: 0.95, 
+    size: 0.95 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 6051.8,
     rotationPeriod: -243.018 // Retrograde rotation
   },
@@ -36,11 +49,11 @@ const PLANETS = [
     id: 'earth', 
     name: 'Earth', 
     color: '#4a90e2', 
-    a: 10.0, // 1.0 AU * 10
+    a: 1.0 * 10 * ORBITAL_DISTANCE_SCALE, // 1.0 AU
     e: 0.0167, 
     period: 365.256, 
     longitudePerihelion: 102.94719,
-    size: 1.0, 
+    size: 1.0 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 6371.0,
     rotationPeriod: 0.99726968 // 23h 56m 4s
   },
@@ -48,11 +61,11 @@ const PLANETS = [
     id: 'mars', 
     name: 'Mars', 
     color: '#e27b58', 
-    a: 15.24, // 1.524 AU * 10
+    a: 1.524 * 10 * ORBITAL_DISTANCE_SCALE, // 1.524 AU
     e: 0.0934, 
     period: 686.980, 
     longitudePerihelion: 336.04084,
-    size: 0.53, 
+    size: 0.53 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 3389.5,
     rotationPeriod: 1.02595675
   },
@@ -60,11 +73,11 @@ const PLANETS = [
     id: 'jupiter', 
     name: 'Jupiter', 
     color: '#c88b3a', 
-    a: 52.03, // 5.203 AU * 10
+    a: 5.203 * 10 * ORBITAL_DISTANCE_SCALE, // 5.203 AU
     e: 0.0484, 
     period: 4332.589, 
     longitudePerihelion: 14.75385,
-    size: 3.5, 
+    size: 3.5 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 69911,
     rotationPeriod: 0.41354 // Fast rotation ~10h
   },
@@ -72,11 +85,11 @@ const PLANETS = [
     id: 'saturn', 
     name: 'Saturn', 
     color: '#fad5a5', 
-    a: 95.37, // 9.537 AU * 10
+    a: 9.537 * 10 * ORBITAL_DISTANCE_SCALE, // 9.537 AU
     e: 0.0542, 
     period: 10759.22, 
     longitudePerihelion: 92.43194,
-    size: 2.9, 
+    size: 2.9 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 58232,
     rotationPeriod: 0.44401 // ~10.7h
   },
@@ -84,11 +97,11 @@ const PLANETS = [
     id: 'uranus', 
     name: 'Uranus', 
     color: '#4fd0e7', 
-    a: 191.91, // 19.191 AU * 10
+    a: 19.191 * 10 * ORBITAL_DISTANCE_SCALE, // 19.191 AU
     e: 0.0472, 
     period: 30688.5, 
     longitudePerihelion: 170.96424,
-    size: 1.3, 
+    size: 1.3 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 25362,
     rotationPeriod: -0.71833 // Retrograde, ~17h
   },
@@ -96,15 +109,184 @@ const PLANETS = [
     id: 'neptune', 
     name: 'Neptune', 
     color: '#4166f5', 
-    a: 300.68, // 30.068 AU * 10
+    a: 30.068 * 10 * ORBITAL_DISTANCE_SCALE, // 30.068 AU
     e: 0.0086, 
     period: 60182, 
     longitudePerihelion: 44.97135,
-    size: 1.2, 
+    size: 1.2 * GLOBAL_SCALE_FACTOR, 
     actualRadius: 24622,
     rotationPeriod: 0.67125 // ~16h
   },
 ];
+
+// Moon data for planets (realistic orbital parameters)
+// Scaled so moons orbit outside their parent planets
+const MOONS = {
+  earth: [
+    {
+      id: 'moon',
+      name: 'Moon',
+      parentId: 'earth',
+      color: '#c0c0c0',
+      a: 2.5, // Scaled to be visible outside Earth (unscaled for orbit calculation)
+      e: 0.0549,
+      period: 27.322, // days
+      longitudePerihelion: 0,
+      size: 0.27 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 1737.4
+    }
+  ],
+  mars: [
+    {
+      id: 'phobos',
+      name: 'Phobos',
+      parentId: 'mars',
+      color: '#8b7d6b',
+      a: 1.2, // Scaled to be visible outside Mars (unscaled for orbit calculation)
+      e: 0.0151,
+      period: 0.319, // days
+      longitudePerihelion: 0,
+      size: 0.08 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 11.267
+    },
+    {
+      id: 'deimos',
+      name: 'Deimos',
+      parentId: 'mars',
+      color: '#9d8d7b',
+      a: 2.0, // Scaled to be visible outside Mars (unscaled for orbit calculation)
+      e: 0.0002,
+      period: 1.263, // days
+      longitudePerihelion: 0,
+      size: 0.06 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 6.2
+    }
+  ],
+  jupiter: [
+    {
+      id: 'io',
+      name: 'Io',
+      parentId: 'jupiter',
+      color: '#ffd700',
+      a: 5.5, // Scaled to be visible outside Jupiter (unscaled for orbit calculation)
+      e: 0.0041,
+      period: 1.769, // days
+      longitudePerihelion: 0,
+      size: 0.28 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 1821.6
+    },
+    {
+      id: 'europa',
+      name: 'Europa',
+      parentId: 'jupiter',
+      color: '#d4af37',
+      a: 7.5, // Scaled to be visible outside Jupiter (unscaled for orbit calculation)
+      e: 0.009,
+      period: 3.551, // days
+      longitudePerihelion: 0,
+      size: 0.24 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 1560.8
+    },
+    {
+      id: 'ganymede',
+      name: 'Ganymede',
+      parentId: 'jupiter',
+      color: '#8b8680',
+      a: 10.0, // Scaled to be visible outside Jupiter (unscaled for orbit calculation)
+      e: 0.0013,
+      period: 7.155, // days
+      longitudePerihelion: 0,
+      size: 0.41 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 2634.1
+    },
+    {
+      id: 'callisto',
+      name: 'Callisto',
+      parentId: 'jupiter',
+      color: '#696969',
+      a: 14.0, // Scaled to be visible outside Jupiter (unscaled for orbit calculation)
+      e: 0.0074,
+      period: 16.689, // days
+      longitudePerihelion: 0,
+      size: 0.37 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 2410.3
+    }
+  ],
+  saturn: [
+    {
+      id: 'mimas',
+      name: 'Mimas',
+      parentId: 'saturn',
+      color: '#e0e0e0',
+      a: 4.5, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0196,
+      period: 0.942, // days
+      longitudePerihelion: 0,
+      size: 0.09 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 198.2
+    },
+    {
+      id: 'enceladus',
+      name: 'Enceladus',
+      parentId: 'saturn',
+      color: '#f5f5f5',
+      a: 5.5, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0047,
+      period: 1.370, // days
+      longitudePerihelion: 0,
+      size: 0.12 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 252.1
+    },
+    {
+      id: 'tethys',
+      name: 'Tethys',
+      parentId: 'saturn',
+      color: '#dcdcdc',
+      a: 6.5, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0001,
+      period: 1.888, // days
+      longitudePerihelion: 0,
+      size: 0.16 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 531.1
+    },
+    {
+      id: 'dione',
+      name: 'Dione',
+      parentId: 'saturn',
+      color: '#d3d3d3',
+      a: 8.0, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0022,
+      period: 2.737, // days
+      longitudePerihelion: 0,
+      size: 0.17 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 561.4
+    },
+    {
+      id: 'rhea',
+      name: 'Rhea',
+      parentId: 'saturn',
+      color: '#c0c0c0',
+      a: 10.0, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0012,
+      period: 4.518, // days
+      longitudePerihelion: 0,
+      size: 0.19 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 763.8
+    },
+    {
+      id: 'titan',
+      name: 'Titan',
+      parentId: 'saturn',
+      color: '#ffa500',
+      a: 15.0, // Scaled to be visible outside Saturn (unscaled for orbit calculation)
+      e: 0.0288,
+      period: 15.945, // days
+      longitudePerihelion: 0,
+      size: 0.40 * GLOBAL_SCALE_FACTOR,
+      actualRadius: 2574.73
+    }
+  ]
+};
 
 // Calculate orbital position using Kepler's laws
 function calculateOrbitalPosition(planet, julianDate) {
@@ -145,6 +327,7 @@ function dateToJulianDate(date) {
 }
 
 // Orbit line component - draws full elliptical orbit
+// Uses the same calculation method as planet positions to ensure perfect alignment
 function OrbitLine({ planet }) {
   const points = useMemo(() => {
     const segments = 128;
@@ -152,10 +335,19 @@ function OrbitLine({ planet }) {
     const omega = (planet.longitudePerihelion * Math.PI) / 180;
     
     for (let i = 0; i <= segments; i++) {
-      const theta = (i / segments) * 2 * Math.PI;
-      const r = (planet.a * (1 - planet.e * planet.e)) / (1 + planet.e * Math.cos(theta));
-      const x = r * Math.cos(theta + omega);
-      const z = r * Math.sin(theta + omega);
+      // Use eccentric anomaly approach to match planet position calculation
+      const E = (i / segments) * 2 * Math.PI; // Eccentric anomaly
+      // Distance uses planet.a which already includes ORBITAL_DISTANCE_SCALE
+      const r = planet.a * (1 - planet.e * Math.cos(E)); // Distance from sun
+      
+      // Calculate true anomaly from eccentric anomaly
+      const v = 2 * Math.atan2(
+        Math.sqrt(1 + planet.e) * Math.sin(E / 2),
+        Math.sqrt(1 - planet.e) * Math.cos(E / 2)
+      );
+      
+      const x = r * Math.cos(v + omega);
+      const z = r * Math.sin(v + omega);
       pts.push([x, 0, z]);
     }
     return pts;
@@ -190,10 +382,10 @@ function Sun() {
   return (
     <group>
       <mesh ref={sunRef}>
-        <sphereGeometry args={[3.5, 32, 32]} />
+        <sphereGeometry args={[3.5 * GLOBAL_SCALE_FACTOR, 32, 32]} />
         <meshBasicMaterial color="#FDB813" />
       </mesh>
-      <pointLight position={[0, 0, 0]} intensity={2} distance={1000} decay={1.5} />
+      <pointLight position={[0, 0, 0]} intensity={10} distance={1000} decay={0.5} />
       <Html distanceFactor={8} style={{ pointerEvents: 'none', fontWeight: 'bold', fontSize: '20px', color: '#FDB813' }}>
         <div className="annotation">Sun</div>
       </Html>
@@ -203,7 +395,7 @@ function Sun() {
 Sun.displayName = 'Sun';
 
 // Planet component with realistic physics
-function Planet({ planet, currentDate, timeScale }) {
+function Planet({ planet, currentDate, timeScale, onPositionUpdate }) {
   const planetRef = useRef();
   const groupRef = useRef();
   const { camera } = useThree();
@@ -219,6 +411,11 @@ function Planet({ planet, currentDate, timeScale }) {
     // Get orbital position
     const pos = calculateOrbitalPosition(planet, julianDate);
     groupRef.current.position.set(pos.x, pos.y, pos.z);
+    
+    // Update position for moons
+    if (onPositionUpdate) {
+      onPositionUpdate(planet.id, { x: pos.x, y: pos.y, z: pos.z });
+    }
 
     // Planet rotation on its axis
     if (planetRef.current) {
@@ -242,8 +439,8 @@ function Planet({ planet, currentDate, timeScale }) {
           <sphereGeometry args={[planet.size, 32, 32]} />
           <meshStandardMaterial 
             color={planet.color} 
-            roughness={0.7}
-            metalness={0.3}
+            roughness={0.9} // originally 0.7
+            metalness={0.7} // originally 0.3
           />
         </mesh>
         {showLabel && (
@@ -267,160 +464,275 @@ function Planet({ planet, currentDate, timeScale }) {
 }
 Planet.displayName = 'Planet';
 
-// Asteroid component with realistic orbit
-function Asteroid({ asteroid, onClick, isSelected, currentDate, timeScale }) {
-  const meshRef = useRef();
+// Moon component with realistic physics
+function Moon({ moon, parentPosition, currentDate, timeScale }) {
+  const moonRef = useRef();
   const groupRef = useRef();
-  
-  // Simulated orbital parameters for asteroids (you would get these from NASA API)
-  const orbitParams = useMemo(() => ({
-    a: 15 + Math.random() * 40, // Semi-major axis
-    e: 0.05 + Math.random() * 0.3, // Eccentricity
-    period: 300 + Math.random() * 1000, // Orbital period in days
-    longitudePerihelion: Math.random() * 360,
-  }), [asteroid.id]);
+  const { camera } = useThree();
+  const [showLabel, setShowLabel] = useState(false);
 
   useFrame(() => {
-    if (!groupRef.current) return;
+    if (!groupRef.current || !parentPosition) return;
 
+    // Calculate moon's orbital position relative to its planet
     const julianDate = dateToJulianDate(currentDate);
     const J2000 = 2451545.0;
     const daysSinceJ2000 = julianDate - J2000;
     
-    const n = (2 * Math.PI) / orbitParams.period;
+    // Moon orbital mechanics
+    const n = (2 * Math.PI) / moon.period;
     const M = (n * daysSinceJ2000) % (2 * Math.PI);
     
     let E = M;
     for (let i = 0; i < 10; i++) {
-      E = M + orbitParams.e * Math.sin(E);
+      E = M + moon.e * Math.sin(E);
     }
     
     const v = 2 * Math.atan2(
-      Math.sqrt(1 + orbitParams.e) * Math.sin(E / 2),
-      Math.sqrt(1 - orbitParams.e) * Math.cos(E / 2)
+      Math.sqrt(1 + moon.e) * Math.sin(E / 2),
+      Math.sqrt(1 - moon.e) * Math.cos(E / 2)
     );
     
-    const r = orbitParams.a * (1 - orbitParams.e * Math.cos(E));
-    const omega = (orbitParams.longitudePerihelion * Math.PI) / 180;
+    const r = moon.a * (1 - moon.e * Math.cos(E));
+    const omega = (moon.longitudePerihelion * Math.PI) / 180;
     
-    const x = r * Math.cos(v + omega);
-    const z = r * Math.sin(v + omega);
+    // Position relative to parent planet
+    const x = parentPosition.x + r * Math.cos(v + omega);
+    const z = parentPosition.z + r * Math.sin(v + omega);
     
-    groupRef.current.position.set(x, 0, z);
-    
-    if (meshRef.current) {
-      meshRef.current.rotation.y += 0.02 * timeScale / 86400;
+    groupRef.current.position.set(x, parentPosition.y, z);
+
+    // Moon rotation
+    if (moonRef.current) {
+      const rotationSpeed = (2 * Math.PI / moon.period) * (timeScale / 86400);
+      moonRef.current.rotation.y += rotationSpeed;
     }
+
+    // Show label only when camera is close enough
+    const camDist = camera.position.distanceTo(groupRef.current.position);
+    setShowLabel(camDist < 50);
   });
 
-  // Draw orbit for asteroids
-  const orbitPoints = useMemo(() => {
+  return (
+    <group ref={groupRef}>
+      <mesh ref={moonRef}>
+        <sphereGeometry args={[moon.size, 16, 16]} />
+        <meshStandardMaterial 
+          color={moon.color} 
+          roughness={0.9}
+          metalness={0.3} // originally 0.1
+        />
+      </mesh>
+      {showLabel && (
+        <Html 
+          distanceFactor={5} 
+          style={{ 
+            pointerEvents: 'none', 
+            fontWeight: 'normal', 
+            fontSize: '10px', 
+            color: moon.color,
+            textShadow: '0 0 3px black',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <div>{moon.name}</div>
+        </Html>
+      )}
+    </group>
+  );
+}
+Moon.displayName = 'Moon';
+
+// Moon orbit line component
+function MoonOrbitLine({ moon, parentPosition }) {
+  const groupRef = useRef();
+  
+  // Calculate orbit points relative to origin (0,0,0)
+  const points = useMemo(() => {
     const segments = 64;
     const pts = [];
-    const omega = (orbitParams.longitudePerihelion * Math.PI) / 180;
+    const omega = (moon.longitudePerihelion * Math.PI) / 180;
     
     for (let i = 0; i <= segments; i++) {
       const theta = (i / segments) * 2 * Math.PI;
-      const r = (orbitParams.a * (1 - orbitParams.e * orbitParams.e)) / (1 + orbitParams.e * Math.cos(theta));
+      const r = (moon.a * (1 - moon.e * moon.e)) / (1 + moon.e * Math.cos(theta));
       const x = r * Math.cos(theta + omega);
       const z = r * Math.sin(theta + omega);
-      pts.push([x, 0, z]);
+      pts.push([x, 0, z]); // Relative to parent, not absolute
     }
     return pts;
-  }, [orbitParams.a, orbitParams.e, orbitParams.longitudePerihelion]);
+  }, [moon.a, moon.e, moon.longitudePerihelion]);
+
+  // Update group position to follow parent planet
+  useFrame(() => {
+    if (groupRef.current && parentPosition) {
+      groupRef.current.position.set(parentPosition.x, parentPosition.y, parentPosition.z);
+    }
+  });
+
+  if (!parentPosition) return null;
 
   return (
-    <>
+    <group ref={groupRef}>
       <line>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
-            count={orbitPoints.length}
-            array={new Float32Array(orbitPoints.flat())}
+            count={points.length}
+            array={new Float32Array(points.flat())}
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial 
-          color={asteroid.is_potentially_hazardous_asteroid ? '#ff4444' : '#888888'} 
-          transparent 
-          opacity={0.4} 
-        />
+        <lineBasicMaterial color={moon.color} transparent opacity={0.2} linewidth={1} />
       </line>
-      <group ref={groupRef}>
-        <mesh
-          ref={meshRef}
-          onClick={() => onClick(asteroid)}
-        >
-          <sphereGeometry args={[0.3, 16, 16]} />
-          <meshStandardMaterial 
-            color={isSelected ? '#ff6b6b' : (asteroid.is_potentially_hazardous_asteroid ? '#ff8844' : '#8b7355')}
-            roughness={0.9}
-          />
-        </mesh>
-        {isSelected && (
-          <Html distanceFactor={10} style={{ pointerEvents: 'none', color: '#fff', fontWeight: 'bold' }}>
-            <div className="annotation">{asteroid.name}</div>
-          </Html>
-        )}
-      </group>
-    </>
+    </group>
+  );
+}
+MoonOrbitLine.displayName = 'MoonOrbitLine';
+
+// -------------------- Asteroids (no tails) --------------------
+function Asteroid({ asteroid, onClick, isSelected, currentDate, timeScale }) {
+  const meshRef = useRef();
+  const groupRef = useRef();
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const julianDate = dateToJulianDate(currentDate);
+    const J2000 = 2451545.0;
+    const daysSinceJ2000 = julianDate - J2000;
+
+    // Orbital mechanics for asteroid using provided/assumed elements
+    const n = (2 * Math.PI) / asteroid.orbit.period;
+    const M = (n * daysSinceJ2000) % (2 * Math.PI);
+    let E = M;
+    for (let i = 0; i < 10; i++) {
+      E = M + asteroid.orbit.e * Math.sin(E);
+    }
+    const v = 2 * Math.atan2(
+      Math.sqrt(1 + asteroid.orbit.e) * Math.sin(E / 2),
+      Math.sqrt(1 - asteroid.orbit.e) * Math.cos(E / 2)
+    );
+    const r = asteroid.orbit.a * (1 - asteroid.orbit.e * Math.cos(E));
+    const omega = (asteroid.orbit.longitudePerihelion * Math.PI) / 180;
+    const x = r * Math.cos(v + omega);
+    const z = r * Math.sin(v + omega);
+    groupRef.current.position.set(x, 0, z);
+
+    if (meshRef.current) meshRef.current.rotation.y += 0.02 * timeScale / 86400;
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh ref={meshRef} onClick={() => onClick(asteroid)}>
+        <sphereGeometry args={[0.35, 16, 16]} />
+        <meshStandardMaterial
+          color={asteroid.is_potentially_hazardous_asteroid ? '#ff8855' : '#66c2ff'}
+          roughness={0.8}
+          emissive={asteroid.is_potentially_hazardous_asteroid ? '#ff2200' : '#0b1a2a'}
+          emissiveIntensity={asteroid.is_potentially_hazardous_asteroid ? 0.6 : 0.25}
+        />
+      </mesh>
+      {isSelected && (
+        <Html distanceFactor={10} style={{ pointerEvents: 'none', color: '#fff', fontWeight: 'bold' }}>
+          <div className="annotation">{asteroid.name}</div>
+        </Html>
+      )}
+    </group>
   );
 }
 Asteroid.displayName = 'Asteroid';
 
-// Main component
-function SolarSystemView({ onAsteroidSelect, selectedAsteroid, currentDate = new Date(), timeScale = 1 }) {
-  // Example asteroids with realistic data
-  const asteroids = useMemo(() => [
-    { id: '1', name: '2025 Impactor', is_potentially_hazardous_asteroid: true },
-    { id: '2', name: '99942 Apophis', is_potentially_hazardous_asteroid: true },
-    { id: '3', name: '101955 Bennu', is_potentially_hazardous_asteroid: false }
-  ], []);
+// -------------------- Main Solar System View --------------------
+function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [timeScale, setTimeScale] = useState(86400); // seconds per real-time second (1 day/sec)
+  const [planetPositions, setPlanetPositions] = useState({});
+
+  function Ticker({ onTick, scale }) {
+    useFrame((_, delta) => {
+      onTick(delta, scale);
+    });
+    return null;
+  }
+
+  const updatePlanetPosition = (id, pos) => {
+    setPlanetPositions(prev => ({ ...prev, [id]: pos }));
+  };
+
+  // Hazard asteroid dataset with approximate orbital elements (ASSUMED where not provided)
+  const asteroids = useMemo(() => {
+    return [
+      {
+        id: '29075', name: '29075 (1950 DA)', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, impact_probability: '3.8e-4', torino_scale: 0,
+        orbit: { a: 1.7 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.51, period: 770, longitudePerihelion: 350 }
+      },
+      {
+        id: '101955', name: '101955 Bennu (1999 RQ36)', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 490 } }, impact_probability: '5.7e-4', torino_scale: 0,
+        orbit: { a: 1.126 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.2037, period: 436.6, longitudePerihelion: 101 }
+      },
+      {
+        id: '2008JL3', name: '2008 JL3', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 29 } }, impact_probability: '1.7e-4', torino_scale: 0,
+        orbit: { a: 1.63 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.23, period: 620, longitudePerihelion: 45 }
+      },
+      {
+        id: '2000SG344', name: '2000 SG344', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 37 } }, impact_probability: '2.7e-3', torino_scale: 0,
+        orbit: { a: 1.0 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.067, period: 368, longitudePerihelion: 190 }
+      },
+      {
+        id: 'impactor2025', name: 'Impactor-2025', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 150 } }, impact_probability: '3.7e-4', torino_scale: 1,
+        orbit: { a: 1.2 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.15, period: 500, longitudePerihelion: 270 }
+      }
+    ];
+  }, []);
 
   return (
-    <Canvas camera={{ position: [0, 80, 180], fov: 50, near: 0.1, far: 5000 }}>
-      <color attach="background" args={['#000000']} />
-      
-      {/* Starfield background */}
-      <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-      
-      {/* Lighting */}
-      <ambientLight intensity={0.15} />
-      
-      {/* Sun */}
+    <Canvas camera={{ position: [0, 40, 140], fov: 60, near: 0.1, far: 5000 }}>
+      {/* Advance simulation time each frame */}
+      <Ticker onTick={(delta, scale) => setCurrentDate(prev => new Date(prev.getTime() + delta * scale * 1000))} scale={timeScale} />
+  <Stars radius={STAR_FIELD_RADIUS} depth={Math.max(100, STAR_FIELD_RADIUS * 0.35)} count={8000} factor={7} saturation={0} fade />
+      <ambientLight intensity={0.4} />
       <Sun />
-      
+
       {/* Planets */}
-      {PLANETS.map(planet => (
-        <Planet 
-          key={planet.id} 
-          planet={planet} 
+      {PLANETS.map(p => (
+        <Planet
+          key={p.id}
+          planet={p}
           currentDate={currentDate}
           timeScale={timeScale}
+          onPositionUpdate={updatePlanetPosition}
         />
       ))}
-      
+
+      {/* Moons */}
+      {Object.entries(MOONS).map(([planetId, moons]) => (
+        moons.map(m => (
+          <React.Fragment key={m.id}>
+            <MoonOrbitLine moon={m} parentPosition={planetPositions[planetId]} />
+            <Moon moon={m} parentPosition={planetPositions[planetId]} currentDate={currentDate} timeScale={timeScale} />
+          </React.Fragment>
+        ))
+      ))}
+
       {/* Asteroids */}
-      {asteroids.map(asteroid => (
+      {asteroids.map(a => (
         <Asteroid
-          key={asteroid.id}
-          asteroid={asteroid}
+          key={a.id}
+          asteroid={a}
           onClick={onAsteroidSelect}
-          isSelected={selectedAsteroid?.id === asteroid.id}
+          isSelected={selectedAsteroid?.id === a.id}
           currentDate={currentDate}
           timeScale={timeScale}
         />
       ))}
-      
-      {/* Camera controls */}
-      <OrbitControls 
-        enablePan={true} 
-        enableZoom={true} 
-        enableRotate={true}
-        minDistance={10}
-        maxDistance={1000}
-        zoomSpeed={1.2}
-      />
+
+      {/* Controls */}
+      <OrbitControls enablePan enableZoom enableRotate minDistance={10} maxDistance={2000} zoomSpeed={1.2} />
     </Canvas>
   );
 }
