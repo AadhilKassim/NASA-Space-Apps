@@ -595,25 +595,51 @@ function Asteroid({ asteroid, onClick, isSelected, currentDate, timeScale }) {
   const meshRef = useRef();
   const groupRef = useRef();
 
+  // Log when asteroid receives enriched data
+  React.useEffect(() => {
+    if (asteroid.merged?.orbit) {
+      console.log(`🛰️ Asteroid ${asteroid.id} using SBDB orbit:`, {
+        a: asteroid.merged.orbit.semi_major_axis_au,
+        e: asteroid.merged.orbit.eccentricity,
+        period: asteroid.merged.orbit.period_days,
+        source: asteroid.merged.orbit.source
+      });
+    }
+  }, [asteroid.merged]);
+
   useFrame(() => {
     if (!groupRef.current) return;
     const julianDate = dateToJulianDate(currentDate);
     const J2000 = 2451545.0;
     const daysSinceJ2000 = julianDate - J2000;
 
-    // Orbital mechanics for asteroid using provided/assumed elements
-    const n = (2 * Math.PI) / asteroid.orbit.period;
+    // Use merged orbit if available (from SBDB), otherwise fallback to local orbit
+    const orbitData = asteroid.merged?.orbit || asteroid.orbit;
+    if (!orbitData) return;
+
+    // Convert SBDB merged orbit (AU/days) to scene units if needed
+    const a_scene = orbitData.semi_major_axis_au 
+      ? orbitData.semi_major_axis_au * 10 * ORBITAL_DISTANCE_SCALE 
+      : orbitData.a;
+    const e = orbitData.eccentricity ?? orbitData.e;
+    const period = orbitData.period_days ?? orbitData.period;
+    const longitudePerihelion = orbitData.longitude_perihelion_deg ?? orbitData.longitudePerihelion;
+
+    if (!a_scene || e == null || !period) return;
+
+    // Orbital mechanics for asteroid using orbital elements
+    const n = (2 * Math.PI) / period;
     const M = (n * daysSinceJ2000) % (2 * Math.PI);
     let E = M;
     for (let i = 0; i < 10; i++) {
-      E = M + asteroid.orbit.e * Math.sin(E);
+      E = M + e * Math.sin(E);
     }
     const v = 2 * Math.atan2(
-      Math.sqrt(1 + asteroid.orbit.e) * Math.sin(E / 2),
-      Math.sqrt(1 - asteroid.orbit.e) * Math.cos(E / 2)
+      Math.sqrt(1 + e) * Math.sin(E / 2),
+      Math.sqrt(1 - e) * Math.cos(E / 2)
     );
-    const r = asteroid.orbit.a * (1 - asteroid.orbit.e * Math.cos(E));
-    const omega = (asteroid.orbit.longitudePerihelion * Math.PI) / 180;
+    const r = a_scene * (1 - e * Math.cos(E));
+    const omega = (longitudePerihelion * Math.PI) / 180;
     const x = r * Math.cos(v + omega);
     const z = r * Math.sin(v + omega);
     groupRef.current.position.set(x, 0, z);
@@ -643,55 +669,219 @@ function Asteroid({ asteroid, onClick, isSelected, currentDate, timeScale }) {
 Asteroid.displayName = 'Asteroid';
 
 // -------------------- Main Solar System View --------------------
+
+// Helper component to update time each frame
+function Ticker({ onTick, scale }) {
+  useFrame((_, delta) => {
+    onTick(delta, scale);
+  });
+  return null;
+}
+Ticker.displayName = 'Ticker';
+
 function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [timeScale, setTimeScale] = useState(86400); // seconds per real-time second (1 day/sec)
   const [planetPositions, setPlanetPositions] = useState({});
-
-  function Ticker({ onTick, scale }) {
-    useFrame((_, delta) => {
-      onTick(delta, scale);
-    });
-    return null;
-  }
+  const [enrichedAsteroids, setEnrichedAsteroids] = useState({});
 
   const updatePlanetPosition = (id, pos) => {
     setPlanetPositions(prev => ({ ...prev, [id]: pos }));
   };
 
-  // Hazard asteroid dataset with approximate orbital elements (ASSUMED where not provided)
+  // Auto-enrich selected asteroid with SBDB data
+  React.useEffect(() => {
+    if (!selectedAsteroid) return;
+    
+    // If asteroid already has merged SBDB data from Sidebar, use it
+    if (selectedAsteroid.merged) {
+      console.log('📡 Using pre-enriched SBDB data for asteroid:', selectedAsteroid.id);
+      console.log('Orbit data:', selectedAsteroid.merged.orbit);
+      setEnrichedAsteroids(prev => ({
+        ...prev,
+        [selectedAsteroid.id]: selectedAsteroid.merged
+      }));
+      return;
+    }
+    
+    // If we already enriched this asteroid, skip
+    if (enrichedAsteroids[selectedAsteroid.id]) return;
+    
+    const enrichAsteroid = async () => {
+      try {
+        const query = selectedAsteroid.spkid 
+          ? `spk=${selectedAsteroid.spkid}` 
+          : `sstr=${encodeURIComponent(selectedAsteroid.name.replace(/[()]/g, '').trim())}`;
+        
+        console.log('🌐 Fetching SBDB data for asteroid:', selectedAsteroid.id, 'Query:', query);
+        const resp = await fetch(`/api/asteroids/${selectedAsteroid.id}/full?${query}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const data = await resp.json();
+        console.log('✅ SBDB data received:', data.merged?.orbit);
+        
+        setEnrichedAsteroids(prev => ({
+          ...prev,
+          [selectedAsteroid.id]: data.merged || {}
+        }));
+        
+        // Update selectedAsteroid with enriched data
+        if (data.merged) {
+          onAsteroidSelect({ ...selectedAsteroid, merged: data.merged, sbdb: data.sbdb });
+        }
+      } catch (err) {
+        console.warn(`Failed to enrich asteroid ${selectedAsteroid.id}:`, err);
+      }
+    };
+    
+    enrichAsteroid();
+  }, [selectedAsteroid?.id, selectedAsteroid?.merged]);
+
+
+  // Hazard asteroid dataset with SPK IDs for SBDB enrichment
+  // Orbital elements (a, e, period, longitudePerihelion) can be enhanced via /api/asteroids/:id/full
   const asteroids = useMemo(() => {
     return [
       {
-        id: '29075', name: '29075 (1950 DA)', is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, impact_probability: '3.8e-4', torino_scale: 0,
+        id: '29075', 
+        spkid: '2029075', 
+        name: '29075 (1950 DA)', 
+        is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, 
+        impact_probability: '3.8e-4', 
+        torino_scale: 0,
         orbit: { a: 1.7 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.51, period: 770, longitudePerihelion: 350 }
       },
       {
-        id: '101955', name: '101955 Bennu (1999 RQ36)', is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 490 } }, impact_probability: '5.7e-4', torino_scale: 0,
+        id: '101955', 
+        spkid: '2101955', 
+        name: '101955 Bennu (1999 RQ36)', 
+        is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 490 } }, 
+        impact_probability: '5.7e-4', 
+        torino_scale: 0,
         orbit: { a: 1.126 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.2037, period: 436.6, longitudePerihelion: 101 }
       },
       {
-        id: '2008JL3', name: '2008 JL3', is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 29 } }, impact_probability: '1.7e-4', torino_scale: 0,
+        id: '2008JL3', 
+        spkid: null, // Use sstr '2008 JL3' for SBDB lookup
+        name: '2008 JL3', 
+        is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 29 } }, 
+        impact_probability: '1.7e-4', 
+        torino_scale: 0,
         orbit: { a: 1.63 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.23, period: 620, longitudePerihelion: 45 }
       },
       {
-        id: '2000SG344', name: '2000 SG344', is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 37 } }, impact_probability: '2.7e-3', torino_scale: 0,
+        id: '2000SG344', 
+        spkid: null, // Use sstr '2000 SG344' for SBDB lookup
+        name: '2000 SG344', 
+        is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 37 } }, 
+        impact_probability: '2.7e-3', 
+        torino_scale: 0,
         orbit: { a: 1.0 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.067, period: 368, longitudePerihelion: 190 }
       },
       {
-        id: 'impactor2025', name: 'Impactor-2025', is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 150 } }, impact_probability: '3.7e-4', torino_scale: 1,
+        id: 'impactor2025', 
+        spkid: null, // Fictional object
+        name: 'Impactor-2025', 
+        is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 150 } }, 
+        impact_probability: '3.7e-4', 
+        torino_scale: 1,
         orbit: { a: 1.2 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.15, period: 500, longitudePerihelion: 270 }
       }
     ];
   }, []);
 
+  const calculateBlastRadius = (asteroid) => {
+    const diameter = asteroid.estimated_diameter?.meters?.estimated_diameter_max || 100;
+    return Math.sqrt(diameter) * 1000;
+  };
+
+  const calculateSeverity = (asteroid) => {
+    const diameter = asteroid.estimated_diameter?.meters?.estimated_diameter_max || 100;
+    const energy = Math.pow(diameter/1000, 3) * 15; // Rough energy in MT
+    const casualties = diameter > 1000 ? '1M+' : diameter > 100 ? '100K-1M' : '10K-100K';
+    const economic = diameter > 1000 ? '$1T+' : diameter > 100 ? '$100B-1T' : '$10B-100B';
+    return { energy: energy.toFixed(1), casualties, economic };
+  };
+
   return (
-    <Canvas camera={{ position: [0, 40, 140], fov: 60, near: 0.1, far: 5000 }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Asteroid Data Overlay */}
+      {selectedAsteroid && (
+        <div className="impact-overlay" style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 1000,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '1.5rem',
+          maxWidth: '350px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: '1.2rem' }}>
+              {selectedAsteroid.is_potentially_hazardous_asteroid && '⚠️ '}
+              {selectedAsteroid.name}
+            </h3>
+            <button 
+              onClick={() => onAsteroidSelect(null)}
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                color: '#fff', 
+                fontSize: '1.5rem', 
+                cursor: 'pointer',
+                padding: '0',
+                lineHeight: '1'
+              }}
+            >
+              ×
+            </button>
+          </div>
+          
+          <div style={{ 
+            background: 'rgba(255, 255, 255, 0.05)', 
+            borderRadius: '6px', 
+            padding: '1rem',
+            fontSize: '0.9rem',
+            lineHeight: '1.8'
+          }}>
+            <h4 style={{ margin: '0 0 0.75rem 0', color: '#4fc3f7', fontSize: '1rem' }}>Orbital Parameters</h4>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Semi-major Axis:</strong> {selectedAsteroid.merged?.orbit?.semi_major_axis_au?.toFixed(3) || selectedAsteroid.orbit ? (selectedAsteroid.orbit.a / (10 * ORBITAL_DISTANCE_SCALE)).toFixed(3) : 'N/A'} AU
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Eccentricity:</strong> {selectedAsteroid.merged?.orbit?.eccentricity?.toFixed(4) || selectedAsteroid.orbit?.e?.toFixed(4) || 'N/A'}
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Orbital Period:</strong> {selectedAsteroid.merged?.orbit?.period_days?.toFixed(1) || selectedAsteroid.orbit?.period?.toFixed(1) || 'N/A'} days
+            </p>
+            {selectedAsteroid.merged?.orbit?.source && (
+              <p style={{ margin: '0.25rem 0', fontStyle: 'italic', color: '#888' }}>Orbit Source: {selectedAsteroid.merged.orbit.source}</p>
+            )}
+            
+            <h4 style={{ margin: '1rem 0 0.75rem 0', color: '#4fc3f7', fontSize: '1rem' }}>Physical Properties</h4>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Diameter:</strong> {selectedAsteroid.estimated_diameter?.meters?.estimated_diameter_max?.toFixed(0) || '—'} m
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Absolute Magnitude (H):</strong> {selectedAsteroid.absolute_magnitude_h ?? '—'}
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Hazardous:</strong> {selectedAsteroid.is_potentially_hazardous_asteroid ? 'Yes' : 'No'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Canvas camera={{ position: [0, 40, 140], fov: 60, near: 0.1, far: 5000 }}>
       {/* Advance simulation time each frame */}
       <Ticker onTick={(delta, scale) => setCurrentDate(prev => new Date(prev.getTime() + delta * scale * 1000))} scale={timeScale} />
   <Stars radius={STAR_FIELD_RADIUS} depth={Math.max(100, STAR_FIELD_RADIUS * 0.35)} count={8000} factor={7} saturation={0} fade />
@@ -720,20 +910,27 @@ function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
       ))}
 
       {/* Asteroids */}
-      {asteroids.map(a => (
-        <Asteroid
-          key={a.id}
-          asteroid={a}
-          onClick={onAsteroidSelect}
-          isSelected={selectedAsteroid?.id === a.id}
-          currentDate={currentDate}
-          timeScale={timeScale}
-        />
-      ))}
+      {asteroids.map(a => {
+        // Merge enriched SBDB data if available
+        const enriched = enrichedAsteroids[a.id];
+        const asteroidWithEnrichment = enriched ? { ...a, merged: enriched } : a;
+        
+        return (
+          <Asteroid
+            key={a.id}
+            asteroid={asteroidWithEnrichment}
+            onClick={onAsteroidSelect}
+            isSelected={selectedAsteroid?.id === a.id}
+            currentDate={currentDate}
+            timeScale={timeScale}
+          />
+        );
+      })}
 
       {/* Controls */}
       <OrbitControls enablePan enableZoom enableRotate minDistance={10} maxDistance={2000} zoomSpeed={1.2} />
     </Canvas>
+    </div>
   );
 }
 SolarSystemView.displayName = 'SolarSystemView';
