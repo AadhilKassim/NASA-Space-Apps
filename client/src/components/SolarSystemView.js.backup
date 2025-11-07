@@ -595,51 +595,25 @@ function Asteroid({ asteroid, onClick, isSelected, currentDate, timeScale }) {
   const meshRef = useRef();
   const groupRef = useRef();
 
-  // Log when asteroid receives enriched data
-  React.useEffect(() => {
-    if (asteroid.merged?.orbit) {
-      console.log(`🛰️ Asteroid ${asteroid.id} using SBDB orbit:`, {
-        a: asteroid.merged.orbit.semi_major_axis_au,
-        e: asteroid.merged.orbit.eccentricity,
-        period: asteroid.merged.orbit.period_days,
-        source: asteroid.merged.orbit.source
-      });
-    }
-  }, [asteroid.merged]);
-
   useFrame(() => {
     if (!groupRef.current) return;
     const julianDate = dateToJulianDate(currentDate);
     const J2000 = 2451545.0;
     const daysSinceJ2000 = julianDate - J2000;
 
-    // Use merged orbit if available (from SBDB), otherwise fallback to local orbit
-    const orbitData = asteroid.merged?.orbit || asteroid.orbit;
-    if (!orbitData) return;
-
-    // Convert SBDB merged orbit (AU/days) to scene units if needed
-    const a_scene = orbitData.semi_major_axis_au 
-      ? orbitData.semi_major_axis_au * 10 * ORBITAL_DISTANCE_SCALE 
-      : orbitData.a;
-    const e = orbitData.eccentricity ?? orbitData.e;
-    const period = orbitData.period_days ?? orbitData.period;
-    const longitudePerihelion = orbitData.longitude_perihelion_deg ?? orbitData.longitudePerihelion;
-
-    if (!a_scene || e == null || !period) return;
-
-    // Orbital mechanics for asteroid using orbital elements
-    const n = (2 * Math.PI) / period;
+    // Orbital mechanics for asteroid using provided/assumed elements
+    const n = (2 * Math.PI) / asteroid.orbit.period;
     const M = (n * daysSinceJ2000) % (2 * Math.PI);
     let E = M;
     for (let i = 0; i < 10; i++) {
-      E = M + e * Math.sin(E);
+      E = M + asteroid.orbit.e * Math.sin(E);
     }
     const v = 2 * Math.atan2(
-      Math.sqrt(1 + e) * Math.sin(E / 2),
-      Math.sqrt(1 - e) * Math.cos(E / 2)
+      Math.sqrt(1 + asteroid.orbit.e) * Math.sin(E / 2),
+      Math.sqrt(1 - asteroid.orbit.e) * Math.cos(E / 2)
     );
-    const r = a_scene * (1 - e * Math.cos(E));
-    const omega = (longitudePerihelion * Math.PI) / 180;
+    const r = asteroid.orbit.a * (1 - asteroid.orbit.e * Math.cos(E));
+    const omega = (asteroid.orbit.longitudePerihelion * Math.PI) / 180;
     const x = r * Math.cos(v + omega);
     const z = r * Math.sin(v + omega);
     groupRef.current.position.set(x, 0, z);
@@ -683,122 +657,37 @@ function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [timeScale, setTimeScale] = useState(86400); // seconds per real-time second (1 day/sec)
   const [planetPositions, setPlanetPositions] = useState({});
-  const [enrichedAsteroids, setEnrichedAsteroids] = useState({});
 
   const updatePlanetPosition = (id, pos) => {
     setPlanetPositions(prev => ({ ...prev, [id]: pos }));
   };
 
-  // Auto-enrich selected asteroid with SBDB data
-  React.useEffect(() => {
-    if (!selectedAsteroid) return;
-    
-    // If asteroid already has merged SBDB data from Sidebar, use it
-    if (selectedAsteroid.merged) {
-      console.log('📡 Using pre-enriched SBDB data for asteroid:', selectedAsteroid.id);
-      console.log('Orbit data:', selectedAsteroid.merged.orbit);
-      setEnrichedAsteroids(prev => ({
-        ...prev,
-        [selectedAsteroid.id]: selectedAsteroid.merged
-      }));
-      return;
-    }
-    
-    // If we already enriched this asteroid, skip
-    if (enrichedAsteroids[selectedAsteroid.id]) return;
-    
-    const enrichAsteroid = async () => {
-      try {
-        const query = selectedAsteroid.spkid 
-          ? `spk=${selectedAsteroid.spkid}` 
-          : `sstr=${encodeURIComponent(selectedAsteroid.name.replace(/[()]/g, '').trim())}`;
-        
-        console.log('🌐 Fetching SBDB data for asteroid:', selectedAsteroid.id, 'Query:', query);
-  const resp = await fetch(`/api/asteroids/${selectedAsteroid.id}/full?${query}`);
-  if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
-  const data = await resp.json();
-        console.log('✅ SBDB data received:', data.merged?.orbit);
-        
-        setEnrichedAsteroids(prev => ({
-          ...prev,
-          [selectedAsteroid.id]: data.merged || {}
-        }));
-        
-        // Update selectedAsteroid with enriched data
-        if (data.merged) {
-          onAsteroidSelect({ ...selectedAsteroid, merged: data.merged, sbdb: data.sbdb });
-        }
-      } catch (err) {
-        console.warn(`Proxy enrich failed for ${selectedAsteroid.id}, attempting direct SBDB:`, err?.message || err);
-        try {
-          const { fetchSbdbDirect } = await import('../utils/sbdbFallback');
-          const direct = await fetchSbdbDirect({ spkid: selectedAsteroid.spkid, name: selectedAsteroid.name });
-          if (direct?.merged) {
-            setEnrichedAsteroids(prev => ({ ...prev, [selectedAsteroid.id]: direct.merged }));
-            onAsteroidSelect({ ...selectedAsteroid, merged: direct.merged, sbdb: direct.sbdb });
-          }
-        } catch (fallbackErr) {
-          console.error('SBDB direct fallback failed:', fallbackErr);
-        }
-      }
-    };
-    
-    enrichAsteroid();
-  }, [selectedAsteroid?.id, selectedAsteroid?.merged]);
-
-
-  // Hazard asteroid dataset with SPK IDs for SBDB enrichment
-  // Orbital elements (a, e, period, longitudePerihelion) can be enhanced via /api/asteroids/:id/full
+  // Hazard asteroid dataset with approximate orbital elements (ASSUMED where not provided)
   const asteroids = useMemo(() => {
     return [
       {
-        id: '29075', 
-        spkid: '2029075', 
-        name: '29075 (1950 DA)', 
-        is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, 
-        impact_probability: '3.8e-4', 
-        torino_scale: 0,
+        id: '29075', name: '29075 (1950 DA)', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 1300 } }, impact_probability: '3.8e-4', torino_scale: 0,
         orbit: { a: 1.7 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.51, period: 770, longitudePerihelion: 350 }
       },
       {
-        id: '101955', 
-        spkid: '2101955', 
-        name: '101955 Bennu (1999 RQ36)', 
-        is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 490 } }, 
-        impact_probability: '5.7e-4', 
-        torino_scale: 0,
+        id: '101955', name: '101955 Bennu (1999 RQ36)', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 490 } }, impact_probability: '5.7e-4', torino_scale: 0,
         orbit: { a: 1.126 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.2037, period: 436.6, longitudePerihelion: 101 }
       },
       {
-        id: '2008JL3', 
-        spkid: null, // Use sstr '2008 JL3' for SBDB lookup
-        name: '2008 JL3', 
-        is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 29 } }, 
-        impact_probability: '1.7e-4', 
-        torino_scale: 0,
+        id: '2008JL3', name: '2008 JL3', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 29 } }, impact_probability: '1.7e-4', torino_scale: 0,
         orbit: { a: 1.63 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.23, period: 620, longitudePerihelion: 45 }
       },
       {
-        id: '2000SG344', 
-        spkid: null, // Use sstr '2000 SG344' for SBDB lookup
-        name: '2000 SG344', 
-        is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 37 } }, 
-        impact_probability: '2.7e-3', 
-        torino_scale: 0,
+        id: '2000SG344', name: '2000 SG344', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 37 } }, impact_probability: '2.7e-3', torino_scale: 0,
         orbit: { a: 1.0 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.067, period: 368, longitudePerihelion: 190 }
       },
       {
-        id: 'impactor2025', 
-        spkid: null, // Fictional object
-        name: 'Impactor-2025', 
-        is_potentially_hazardous_asteroid: true,
-        estimated_diameter: { meters: { estimated_diameter_max: 150 } }, 
-        impact_probability: '3.7e-4', 
-        torino_scale: 1,
+        id: 'impactor2025', name: 'Impactor-2025', is_potentially_hazardous_asteroid: true,
+        estimated_diameter: { meters: { estimated_diameter_max: 150 } }, impact_probability: '3.7e-4', torino_scale: 1,
         orbit: { a: 1.2 * 10 * ORBITAL_DISTANCE_SCALE, e: 0.15, period: 500, longitudePerihelion: 270 }
       }
     ];
@@ -864,27 +753,41 @@ function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
           }}>
             <h4 style={{ margin: '0 0 0.75rem 0', color: '#4fc3f7', fontSize: '1rem' }}>Orbital Parameters</h4>
             <p style={{ margin: '0.25rem 0' }}>
-              <strong style={{ color: '#90caf9' }}>Semi-major Axis:</strong> {selectedAsteroid.merged?.orbit?.semi_major_axis_au?.toFixed(3) || (selectedAsteroid.orbit?.a ? (selectedAsteroid.orbit.a / (10 * ORBITAL_DISTANCE_SCALE)).toFixed(3) : 'N/A')} AU
+              <strong style={{ color: '#90caf9' }}>Semi-major Axis:</strong> {(selectedAsteroid.orbit.a / (10 * ORBITAL_DISTANCE_SCALE)).toFixed(3)} AU
             </p>
             <p style={{ margin: '0.25rem 0' }}>
-              <strong style={{ color: '#90caf9' }}>Eccentricity:</strong> {selectedAsteroid.merged?.orbit?.eccentricity?.toFixed(4) || selectedAsteroid.orbit?.e?.toFixed(4) || 'N/A'}
+              <strong style={{ color: '#90caf9' }}>Eccentricity:</strong> {selectedAsteroid.orbit.e.toFixed(4)}
             </p>
             <p style={{ margin: '0.25rem 0' }}>
-              <strong style={{ color: '#90caf9' }}>Orbital Period:</strong> {selectedAsteroid.merged?.orbit?.period_days?.toFixed(1) || selectedAsteroid.orbit?.period?.toFixed(1) || 'N/A'} days
+              <strong style={{ color: '#90caf9' }}>Orbital Period:</strong> {selectedAsteroid.orbit.period.toFixed(1)} days
             </p>
-            {selectedAsteroid.merged?.orbit?.source && (
-              <p style={{ margin: '0.25rem 0', fontStyle: 'italic', color: '#888' }}>Orbit Source: {selectedAsteroid.merged.orbit.source}</p>
-            )}
             
             <h4 style={{ margin: '1rem 0 0.75rem 0', color: '#4fc3f7', fontSize: '1rem' }}>Physical Properties</h4>
             <p style={{ margin: '0.25rem 0' }}>
-              <strong style={{ color: '#90caf9' }}>Diameter:</strong> {selectedAsteroid.estimated_diameter?.meters?.estimated_diameter_max?.toFixed(0) || '—'} m
-            </p>
-            <p style={{ margin: '0.25rem 0' }}>
-              <strong style={{ color: '#90caf9' }}>Absolute Magnitude (H):</strong> {selectedAsteroid.absolute_magnitude_h ?? '—'}
+              <strong style={{ color: '#90caf9' }}>Diameter:</strong> {selectedAsteroid.estimated_diameter?.meters?.estimated_diameter_max?.toFixed(0) || 100}m
             </p>
             <p style={{ margin: '0.25rem 0' }}>
               <strong style={{ color: '#90caf9' }}>Hazardous:</strong> {selectedAsteroid.is_potentially_hazardous_asteroid ? 'Yes' : 'No'}
+            </p>
+            
+            <h4 style={{ margin: '1rem 0 0.75rem 0', color: '#ff5252', fontSize: '1rem' }}>Impact Assessment</h4>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Impact Probability:</strong> {selectedAsteroid.impact_probability || 'N/A'}
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Torino Scale:</strong> {selectedAsteroid.torino_scale || 0}
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Blast Radius:</strong> {(calculateBlastRadius(selectedAsteroid)/1000).toFixed(1)} km
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Energy:</strong> {calculateSeverity(selectedAsteroid).energy} MT
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Est. Casualties:</strong> {calculateSeverity(selectedAsteroid).casualties}
+            </p>
+            <p style={{ margin: '0.25rem 0' }}>
+              <strong style={{ color: '#90caf9' }}>Economic Impact:</strong> {calculateSeverity(selectedAsteroid).economic}
             </p>
           </div>
         </div>
@@ -919,22 +822,16 @@ function SolarSystemView({ onAsteroidSelect, selectedAsteroid }) {
       ))}
 
       {/* Asteroids */}
-      {asteroids.map(a => {
-        // Merge enriched SBDB data if available
-        const enriched = enrichedAsteroids[a.id];
-        const asteroidWithEnrichment = enriched ? { ...a, merged: enriched } : a;
-        
-        return (
-          <Asteroid
-            key={a.id}
-            asteroid={asteroidWithEnrichment}
-            onClick={onAsteroidSelect}
-            isSelected={selectedAsteroid?.id === a.id}
-            currentDate={currentDate}
-            timeScale={timeScale}
-          />
-        );
-      })}
+      {asteroids.map(a => (
+        <Asteroid
+          key={a.id}
+          asteroid={a}
+          onClick={onAsteroidSelect}
+          isSelected={selectedAsteroid?.id === a.id}
+          currentDate={currentDate}
+          timeScale={timeScale}
+        />
+      ))}
 
       {/* Controls */}
       <OrbitControls enablePan enableZoom enableRotate minDistance={10} maxDistance={2000} zoomSpeed={1.2} />

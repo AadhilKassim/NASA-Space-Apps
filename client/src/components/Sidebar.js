@@ -39,30 +39,45 @@ function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedA
         : `sstr=${encodeURIComponent(asteroid.name)}`;
       
       const response = await fetch(`/api/asteroids/${asteroid.id}/full?${query}`);
+      if (!response.ok) throw new Error(`Proxy HTTP ${response.status}`);
+      const data = await response.json();
       
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Cache the enriched data
-        setEnrichedCache(prev => ({
-          ...prev,
-          [asteroid.id]: {
-            merged: data.merged,
-            sbdb: data.sbdb,
-            absolute_magnitude_h: data.merged?.absolute_magnitude_h
-          }
-        }));
-
-        // Update selected asteroid with enriched data
-        setSelectedAsteroid({
-          ...asteroid,
+      // Cache the enriched data
+      setEnrichedCache(prev => ({
+        ...prev,
+        [asteroid.id]: {
           merged: data.merged,
           sbdb: data.sbdb,
           absolute_magnitude_h: data.merged?.absolute_magnitude_h
-        });
-      }
+        }
+      }));
+
+      // Update selected asteroid with enriched data
+      setSelectedAsteroid({
+        ...asteroid,
+        merged: data.merged,
+        sbdb: data.sbdb,
+        absolute_magnitude_h: data.merged?.absolute_magnitude_h
+      });
     } catch (error) {
-      console.error('Failed to fetch enriched asteroid data:', error);
+      console.warn('Proxy fetch failed, attempting direct SBDB fallback:', error?.message || error);
+      try {
+        const { fetchSbdbDirect } = await import('../utils/sbdbFallback');
+        const direct = await fetchSbdbDirect({ spkid: asteroid.spkid, name: asteroid.name });
+        if (direct?.merged) {
+          setEnrichedCache(prev => ({
+            ...prev,
+            [asteroid.id]: {
+              merged: direct.merged,
+              sbdb: direct.sbdb,
+              absolute_magnitude_h: direct.merged?.absolute_magnitude_h
+            }
+          }));
+          setSelectedAsteroid({ ...asteroid, ...{ merged: direct.merged, sbdb: direct.sbdb, absolute_magnitude_h: direct.merged?.absolute_magnitude_h } });
+        }
+      } catch (fallbackErr) {
+        console.error('SBDB direct fallback failed:', fallbackErr);
+      }
       // Keep the basic asteroid data on error
     }
   };
@@ -128,7 +143,7 @@ function Sidebar({ activeModule, setActiveModule, selectedAsteroid, setSelectedA
                   a: {selectedAsteroid.merged.orbit.semi_major_axis_au.toFixed(3)} AU
                 </p>
               )}
-              {selectedAsteroid.merged.orbit.eccentricity !== undefined && (
+              {selectedAsteroid.merged.orbit.eccentricity != null && (
                 <p style={{ fontSize: '0.85rem', margin: '0.25rem 0' }}>
                   e: {selectedAsteroid.merged.orbit.eccentricity.toFixed(4)}
                 </p>
