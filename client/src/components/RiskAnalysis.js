@@ -10,7 +10,7 @@ function RiskAnalysis({ asteroid, onClose }) {
     
     setLoading(true);
     try {
-      const response = await axios.get(`http://localhost:5000/api/analyze/${asteroid.name}`);
+      const response = await axios.get(`/api/analyze/${encodeURIComponent(asteroid.name)}`);
       setAnalysis(response.data);
     } catch (error) {
       console.error('Analysis failed:', error);

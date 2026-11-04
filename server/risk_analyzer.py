@@ -2,6 +2,7 @@ import math
 import json
 import requests
 import sys
+import time
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 
@@ -256,8 +257,13 @@ def run_analysis_api(designation):
 # --- 5. MAIN EXECUTION (FOR RUNNING THE API) ---
 
 if __name__ == "__main__":
-    
-    # NOTE: When running in a local environment (terminal), run on port 5000.
-    # In Colab, you need to use ngrok or similar tunneling for external access, but for 
-    # testing within the notebook, the flask server runs fine locally.
+    if len(sys.argv) > 1:
+        designation = " ".join(sys.argv[1:])
+        with app.app_context():
+            response = run_analysis_api(designation)
+            if isinstance(response, tuple):
+                response = response[0]
+            print(json.dumps(response.get_json()))
+            sys.exit(0 if response.status_code < 400 else 1)
+
     app.run(host='0.0.0.0', port=5000)

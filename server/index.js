@@ -37,11 +37,15 @@ app.get('/api/analyze/:designation', async (req, res) => {
   const { spawn } = require('child_process');
   
   try {
-    const python = spawn('python', ['risk_analyzer.py', designation]);
+    const python = spawn('python3', ['risk_analyzer.py', designation]);
     let result = '';
+    let error = '';
     
     python.stdout.on('data', (data) => {
       result += data.toString();
+    });
+    python.stderr.on('data', (data) => {
+      error += data.toString();
     });
     
     python.on('close', (code) => {
@@ -50,11 +54,17 @@ app.get('/api/analyze/:designation', async (req, res) => {
           const analysis = JSON.parse(result);
           res.json(analysis);
         } catch (e) {
+          console.error('Failed to parse risk analysis output:', error || result, e);
           res.status(500).json({ error: 'Failed to parse analysis result' });
         }
       } else {
+        console.error('Risk analysis process failed:', error);
         res.status(500).json({ error: 'Python analysis failed' });
       }
+    });
+    python.on('error', (error) => {
+      console.error('Failed to start risk analysis process:', error);
+      res.status(500).json({ error: 'Failed to run risk analysis' });
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to run risk analysis' });

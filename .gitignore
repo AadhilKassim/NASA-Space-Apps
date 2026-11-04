@@ -1,0 +1,4 @@
+node_modules
+client/.next
+client/out
+server/__pycache__

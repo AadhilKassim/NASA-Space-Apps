@@ -41,16 +41,15 @@ Steps:
 ```bash
 # From repo root
 npm install
-cd client && npm install && npm run build   # creates client/out via next export
-cd ../server && npm install
-npm start  # launches Express on PORT (default 5000)
+npm run build
+npm start  # launches the combined app on PORT (default 5000)
 ```
 
 Render.com example configuration:
 
 Build Command:
 ```bash
-npm install && cd client && npm ci && npm run build && cd ../server && npm ci
+npm install && npm run build
 ```
 
 Start Command:
@@ -63,8 +62,12 @@ If `client/out/index.html` is missing, the server returns a minimal fallback pag
 ### Docker Deployment
 
 ```bash
-docker-compose up
+docker compose up --build
 ```
+
+The combined container serves the static Next.js application and Express API
+from port `5000`. Set `NASA_API_KEY` in the environment to use a production
+NASA API key; `DEMO_KEY` is used by default.
 
 ## Tech Stack
 
