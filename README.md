@@ -69,6 +69,18 @@ The combined container serves the static Next.js application and Express API
 from port `5000`. Set `NASA_API_KEY` in the environment to use a production
 NASA API key; `DEMO_KEY` is used by default.
 
+### Render Deployment
+
+This repository includes a [`render.yaml`](./render.yaml) Blueprint that
+deploys the combined Docker application as one Web Service.
+
+1. In Render, choose **New → Blueprint** and select this repository.
+2. Set the `NASA_API_KEY` environment variable when prompted.
+3. Apply the Blueprint and open the generated service URL.
+
+Render supplies `PORT` automatically. The service health check is
+`/api/health`.
+
 ## Tech Stack
 
 - **Frontend**: Next.js, React, Three.js (@react-three/fiber), Leaflet

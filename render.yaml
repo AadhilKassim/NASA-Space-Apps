@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: aim-asteroid-visualizer
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NASA_API_KEY
+        sync: false
